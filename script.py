@@ -111,15 +111,6 @@ class VideoWindow(QMainWindow):
         fileMenu.addAction(settingsAction)
         fileMenu.addAction(exitAction)
 
-        #toolBar = self.addToolBar('exit')
-        #toolBar.addAction(openAction)
-        #toolBar.addAction(openDirAction)
-        #toolBar.addAction(exportAction)
-        #toolBar.addAction(exitAction)
-        #toolBar.addAction(settingsAction)
-
-
-
         # Create a widget for window contents
         wid = QWidget(self)
         self.setCentralWidget(wid)
@@ -306,6 +297,8 @@ class VideoWindow(QMainWindow):
             self.current_pos = int(event.x() / self.videoWidget.geometry().width() * self.mediaPlayer.duration())
             self.mediaPlayer.setPosition(self.current_pos)
             self.updateImage(event.x())
+        elif event.type() == QtCore.QEvent.MouseButtonPress or event.type() == QtCore.QEvent.MouseButtonRelease:
+            self.addMarker()
         return True
 
 
@@ -429,8 +422,6 @@ class VideoWindow(QMainWindow):
             self.saved_markers = self.video_list[self.index].saved_markers
         else:
             self.reset()
-        print("stop")
-
 
     def nextVid(self):
         self.save()
@@ -516,27 +507,8 @@ class VideoWindow(QMainWindow):
         MsgBox.exec()
         #MsgBox.about(self, "Title", "Message")
 
-
-    def keyPressEvent(self, e):
-        key = e.key()
-        self.stop_at_marker_end = False
-
-        # play/pause
-        if key == Qt.Key_Space:
-            print(self.mediaPlayer.duration())
-            self.play()
-
-
-        # Play from marker begin
-        elif key == Qt.Key_E and self.marker_begin != None:
-            self.mediaPlayer.setPosition(self.marker_begin)
-            if self.marker_end:
-                self.stop_at_marker_end = True
-            if self.mediaPlayer.state() != QMediaPlayer.PlayingState:
-                self.play()
-
-        # Add marker
-        elif key == Qt.Key_W and not self.overlapsWithSavedClips(self.current_pos):
+    def addMarker(self):
+        if not self.overlapsWithSavedClips(self.current_pos):
             if self.marker_begin == None:
                 self.marker_begin = self.current_pos
             elif self.marker_end == None:
@@ -558,14 +530,37 @@ class VideoWindow(QMainWindow):
                 self.save()
 
 
+    def keyPressEvent(self, e):
+        key = e.key()
+        self.stop_at_marker_end = False
+
+        # play/pause
+        if key == Qt.Key_Space:
+            print(self.mediaPlayer.duration())
+            self.play()
+
+
+        # Play from marker begin
+        elif key == Qt.Key_E and self.marker_begin != None:
+            self.mediaPlayer.setPosition(self.marker_begin)
+            if self.marker_end:
+                self.stop_at_marker_end = True
+            if self.mediaPlayer.state() != QMediaPlayer.PlayingState:
+                self.play()
+
+        # Add marker
+        elif key == Qt.Key_W:
+            self.addMarker()
+
+
         # Remove all markers
         elif key == Qt.Key_S:
             self.delete_marker()
 
-        elif key == Qt.Key_Q:
-            if self.marker_begin != None and self.marker_end != None:
-                self.saved_markers.append([self.marker_begin, self.marker_end])
-            self.delete_marker()
+        # elif key == Qt.Key_Q:
+        #     if self.marker_begin != None and self.marker_end != None:
+        #         self.saved_markers.append([self.marker_begin, self.marker_end])
+        #     self.delete_marker()
 
         # Time skipping
         elif key == Qt.Key_Left:
