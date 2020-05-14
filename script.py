@@ -1,6 +1,8 @@
-# PyQt5 Video player
+# Author: Jacob Jon Hansen
 # !/usr/bin/env python
-
+import pickle
+import numpy as np
+import ffmpeg
 from PyQt5.QtCore import QDir, Qt, QUrl
 from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer
 from PyQt5.QtMultimediaWidgets import QVideoWidget
@@ -11,10 +13,10 @@ from PyQt5.QtCore import QTimer
 from PyQt5 import QtCore
 import sys
 import os
+import time
 from collections import namedtuple
 
-video_container = namedtuple('video', ['path', 'marker_begin', 'marker_end'], )
-
+video_container = namedtuple('video_container', ['path', 'marker_begin', 'marker_end', 'saved_markers'], )
 
 class List(QListWidget):
     def __init__(self, parent):
@@ -25,6 +27,7 @@ class List(QListWidget):
         self.parent().keyPressEvent(event)
 
 
+
 class VideoWindow(QMainWindow):
 
     def __init__(self, parent=None):
@@ -33,14 +36,15 @@ class VideoWindow(QMainWindow):
         # Variables ########################
         self.marker_begin = None
         self.marker_end = None
+        self.saved_markers = []
         self.current_pos = 0
 
         # Stop playing when reaching marker end?
         self.stop_at_marker_end = False
 
-        # Media list
-        self.video_list = [video_container("/run/user/1000/doc/fced845e/iron5_3.mp4", "None", "None"),
-                           video_container("/run/user/1000/doc/d3bd697e/thefuck.mp4", "None", "None")]
+        # Settings
+        self.include_subdirs = False
+
 
         # Which video are currently playing
         self.index = 0
@@ -48,6 +52,7 @@ class VideoWindow(QMainWindow):
 
         # PyQt
         self.setWindowTitle("PyQt Video Player Widget Example - pythonprogramminglanguage.com")
+
 
         self.mediaPlayer = QMediaPlayer(None, QMediaPlayer.VideoSurface)
 
@@ -69,26 +74,56 @@ class VideoWindow(QMainWindow):
                                       QSizePolicy.Maximum)
 
         # Create new action
-        openAction = QAction(QIcon('open.png'), '&Open', self)
+        openAction = QAction(QIcon('icons/file.png'), '&Open', self)
         openAction.setShortcut('Ctrl+O')
         openAction.setStatusTip('Open movie')
         openAction.triggered.connect(self.openFile)
 
+        # Create new action
+        openDirAction = QAction(QIcon('icons/folder.png'), '&OpenDir', self)
+        openDirAction.setShortcut('Ctrl+Shift+O')
+        openDirAction.setStatusTip('Open Directory')
+        openDirAction.triggered.connect(self.openDir)
+
+        exportAction = QAction(QIcon('icons/play.png'), '&Export', self)
+        exportAction.setShortcut('Ctrl+E')
+        exportAction.setStatusTip('Export Files')
+        exportAction.triggered.connect(self.convertToMp4)
+
         # Create exit action
-        exitAction = QAction(QIcon('exit.png'), '&Exit', self)
+        exitAction = QAction(QIcon('icons/cancel.png'), '&Exit', self)
         exitAction.setShortcut('Ctrl+Q')
         exitAction.setStatusTip('Exit application')
         exitAction.triggered.connect(self.exitCall)
+
+        # Create settings actions
+        settingsAction = QAction(QIcon('icons/settings.png'), '&Settings', self)
+        settingsAction.setShortcut('Ctrl+P')
+        settingsAction.setStatusTip("Settings")
+        settingsAction.triggered.connect(self.settings)
 
         # Create menu bar and add action
         menuBar = self.menuBar()
         fileMenu = menuBar.addMenu('&File')
         fileMenu.addAction(openAction)
+        fileMenu.addAction(openDirAction)
+        fileMenu.addAction(exportAction)
+        fileMenu.addAction(settingsAction)
         fileMenu.addAction(exitAction)
+
+        #toolBar = self.addToolBar('exit')
+        #toolBar.addAction(openAction)
+        #toolBar.addAction(openDirAction)
+        #toolBar.addAction(exportAction)
+        #toolBar.addAction(exitAction)
+        #toolBar.addAction(settingsAction)
+
+
 
         # Create a widget for window contents
         wid = QWidget(self)
         self.setCentralWidget(wid)
+
 
         # Create layouts to place inside widget
         controlLayout = QHBoxLayout()
@@ -101,15 +136,30 @@ class VideoWindow(QMainWindow):
         listlayout.setContentsMargins(0, 0, 0, 0)
         self.labellist = List(self)
         listlayout.addWidget(self.labellist)
-        self.mImgList = self.scanAllImages("/home/jake/dev/play_extractor")
-        for imgPath in self.mImgList:
-            item = QListWidgetItem(imgPath)
-            # item.setForeground(Qt.red)
-            # item.setData(2, imgPath)
-            # item.setText(imgPath.split("/")[-1])
-            # item.setText("test")
-            self.labellist.addItem(item)
-        # self.labellist.item(0).setSelected(True)
+
+
+        #if os.path.isfile(".last_session.pickle"):
+        if False:
+            self.video_list = pickle.load( open( ".last_session.pickle", "rb" ) )
+            # Load videos into the the side list view
+            for vid in self.video_list:
+                imgPath = vid.path
+                item = QListWidgetItem(imgPath.split("/")[-1].split(".")[0])
+                self.labellist.addItem(item)
+
+        else:
+            #Open the play_extractor folder
+            self.mImgList = self.scanAllDirs("/home/jake/dev/play_extractor")
+            self.video_list = []
+            for imgPath in self.mImgList:
+                self.video_list.append(video_container(imgPath, "None", "None", []))
+                item = QListWidgetItem(imgPath.split("/")[-1].split(".")[0])
+                self.labellist.addItem(item)
+
+
+
+        self.labellist.item(0).setSelected(True)
+        self.labellist.itemClicked.connect(self.itemActivated)
 
         layout = QVBoxLayout()
         layout.addWidget(self.videoWidget)
@@ -131,7 +181,7 @@ class VideoWindow(QMainWindow):
         self.mediaPlayer.durationChanged.connect(self.durationChanged)
         self.mediaPlayer.error.connect(self.handleError)
 
-        self.openDefault()
+        self.loadVidIndex(self.index)
 
         self.qTimer = QTimer()
         # set interval to 1 s
@@ -142,8 +192,14 @@ class VideoWindow(QMainWindow):
         self.qTimer.start()
 
 
-    def scanAllImages(self, folderPath):
-        extensions = ['.%s' % fmt.data().decode("ascii").lower() for fmt in QImageReader.supportedImageFormats()]
+    def itemActivated(self, item):
+        index = self.labellist.currentRow()
+        self.loadVidIndex(index)
+
+    def settings(self):
+        raise NotImplementedError
+
+    def scanAllDirs(self, folderPath):
         images = []
         extensions = [".mp4"]
 
@@ -159,12 +215,23 @@ class VideoWindow(QMainWindow):
     def time_to_x(self, timepoint):
         return int(timepoint / self.mediaPlayer.duration() * self.videoWidget.width())
 
+    def clipArea(self, marker_begin, position):
+        # Clip the box so it doesn't overlap with previous clips
+        if self.saved_markers:
+            if position > marker_begin:
+                beginning_markers = [x[0] for x in self.saved_markers]
+                beginning_markers.append(position)
+                beginning_markers = np.array(beginning_markers)
+                beginning_markers = beginning_markers[beginning_markers > marker_begin]
+                return(np.min(beginning_markers))
+            else:
+                ending_markers = np.array([x[1] for x in self.saved_markers].append(position))
+                ending_markers = ending_markers[ending_markers < marker_begin]
+                return(np.max(ending_markers))
+        else:
+            return position
 
     def updateImage(self, position=0):
-        # width = self.frameGeometry().width()
-        # width = self.videoWidget.width()
-        # height = self.frameGeometry().height()
-        # width = self.videoWidget.geometry().width()
         width = self.label.width()
         pixmap = QPixmap(width, 50)
         pixmap.fill(Qt.gray)
@@ -173,17 +240,22 @@ class VideoWindow(QMainWindow):
         painter.begin(pixmap)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(QPen(Qt.black, 1))
-        markerwidth = 10
-        markerwidth_begin_end = 10
-        # Draw beginning and end markers
 
+        # Draw markers and bars
+        markerwidth = 10    
         try:
+            for saved_marker in self.saved_markers:
+                sm_begin, sm_end = saved_marker
+                bar_width = self.time_to_x(sm_end - sm_begin)
+                painter.setBrush(QBrush(Qt.yellow, Qt.SolidPattern))
+                painter.drawRect(self.time_to_x(sm_begin), 0, bar_width, 50)
+            
             if self.marker_begin:
                 markerpos = self.time_to_x(self.marker_begin)
                 if self.marker_end:
                     bar_width = self.time_to_x(self.marker_end) - markerpos
                 elif markerpos < self.time_to_x(self.current_pos):
-                    bar_width = self.time_to_x(self.current_pos) - markerpos
+                    bar_width = self.time_to_x(self.clipArea(self.marker_begin, self.current_pos)) - markerpos
                 else:
                     bar_width = 0
                 painter.setBrush(QBrush(Qt.blue, Qt.SolidPattern))
@@ -192,7 +264,7 @@ class VideoWindow(QMainWindow):
                 if self.marker_end:
                     if self.current_pos > self.marker_end:
                         painter.setBrush(QBrush(QColor(171, 255, 158), Qt.SolidPattern))
-                        bar_width = self.time_to_x(self.current_pos) - self.time_to_x(self.marker_end)
+                        bar_width = self.time_to_x(self.clipArea(self.marker_begin, self.current_pos) - self.marker_end)
                         painter.drawRect(self.time_to_x(self.marker_end), 0, bar_width, 50)
 
                     elif self.current_pos < self.marker_begin:
@@ -214,9 +286,11 @@ class VideoWindow(QMainWindow):
                 if marker != None:
                     painter.setBrush(QBrush(Qt.green, Qt.SolidPattern))
                     markerpos = int(marker / self.mediaPlayer.duration() * width)
-                    painter.drawRect(min(markerpos, width - markerwidth_begin_end), 0, markerwidth_begin_end, 50)
-        except:
-            pass
+                    painter.drawRect(min(markerpos, width - markerwidth), 0, markerwidth, 50)
+        
+        except Exception as e:
+            print(e)
+
         # Draw video playback marker
         painter.setBrush(QBrush(Qt.white, Qt.SolidPattern))
         painter.drawRect(min(position, width - markerwidth), 0, markerwidth, 50)
@@ -275,6 +349,7 @@ class VideoWindow(QMainWindow):
 
 
     def openDir(self):
+        str(QFileDialog.getExistingDirectory(self, "Select Directory", "."))
         targetDirPath = "/home/jake/dev/play_extractor"
         # self.labelList = QListWidget()
 
@@ -334,17 +409,63 @@ class VideoWindow(QMainWindow):
     def save(self):
         if self.marker_begin and self.marker_end:
             self.video_list[self.index] = video_container(self.video_list[self.index].path, self.marker_begin,
-                                                          self.marker_end)
+                                                          self.marker_end, self.saved_markers)
+
+        #Save the video list to a file
+        pickle.dump(self.video_list, open( ".last_session.pickle", "wb" ))
+
+    def delete_marker(self):
+        self.video_list[self.index] = self.video_list[self.index]._replace(marker_begin = "None", marker_end = "None")
+        self.marker_end = None
+        self.marker_begin = None
 
 
     def load(self):
         if self.video_list[self.index].marker_begin != "None" and self.video_list[self.index].marker_end != "None":
+            print("loading")
             self.marker_begin = self.video_list[self.index].marker_begin
             self.marker_end = self.video_list[self.index].marker_end
             self.current_pos = self.marker_begin
+            self.saved_markers = self.video_list[self.index].saved_markers
         else:
             self.reset()
         print("stop")
+
+
+    def nextVid(self):
+        self.save()
+        self.labellist.item(self.index).setSelected(False)
+        if self.marker_begin and self.marker_end:
+            self.labellist.item(self.index).setForeground(Qt.green)
+        self.index_next()
+        self.reset()
+        self.load()
+        self.openDefault()
+        self.labellist.item(self.index).setSelected(True)
+
+
+    def previousVid(self):
+        self.save()
+        self.labellist.item(self.index).setSelected(False)
+        if self.marker_begin and self.marker_end:
+            self.labellist.item(self.index).setForeground(Qt.green)
+        self.index_prev()
+        self.reset()
+        self.load()
+        self.openDefault()
+        self.labellist.item(self.index).setSelected(True)
+
+
+    def loadVidIndex(self, index):
+        self.save()
+        self.labellist.item(self.index).setSelected(False)
+        if self.marker_begin and self.marker_end:
+            self.labellist.item(self.index).setForeground(Qt.green)
+        self.index = index
+        self.reset()
+        self.load()
+        self.openDefault()
+        self.labellist.item(self.index).setSelected(True)
 
 
     def toggleFileList(self):
@@ -353,10 +474,51 @@ class VideoWindow(QMainWindow):
         else:
             self.labellist.hide()
 
+    def overlapsWithSavedClips(self, position):
+        for saved_marker in self.saved_markers:
+            if position > saved_marker[0] and position <= saved_marker[1]:
+                return True
+            if self.marker_begin != None:
+                if self.marker_begin < saved_marker[0] and (position > saved_marker[0]):
+                    return True 
+                
+        return False
+
+
+    def convertToMp4(self):
+        for video in self.video_list:
+            if video.marker_begin != "None" and video.marker_end != "None":
+                input_kwargs = {}
+                start_time = video.marker_begin / 1000
+                end_time = video.marker_end / 1000
+
+                if start_time is not None:
+                    input_kwargs['ss'] = start_time
+                else:
+                    start_time = 0.
+                if end_time is not None:
+                    input_kwargs['t'] = end_time - start_time
+
+                stream = ffmpeg.input(video.path, **input_kwargs)
+                stream = ffmpeg.output(stream, 'output/{}.mp4'.format(video.path.split("/")[-1].split(".")[0]))
+                ffmpeg.run(stream)
+
+    def showShortcuts(self):
+        MsgBox = QMessageBox()
+        MsgBox.setText("<b>Shortcuts</b><br><br>"
+                       "<b>mouse hover</b>: scrub <br>"
+                       "<b>space</b>: play/pause <br>"
+                       "<b>d</b>: next video <br>"
+                       "<b>a</b>: previous video <br> "
+                       "<b>w</b>: place marker <br>"
+                       "<b>s</b>: delete selection <br>"
+                       "<b>p</b>: play from first marker <br>")
+        MsgBox.exec()
+        #MsgBox.about(self, "Title", "Message")
+
 
     def keyPressEvent(self, e):
         key = e.key()
-        print(key)
         self.stop_at_marker_end = False
 
         # play/pause
@@ -374,7 +536,7 @@ class VideoWindow(QMainWindow):
                 self.play()
 
         # Add marker
-        elif key == Qt.Key_W:
+        elif key == Qt.Key_W and not self.overlapsWithSavedClips(self.current_pos):
             if self.marker_begin == None:
                 self.marker_begin = self.current_pos
             elif self.marker_end == None:
@@ -392,43 +554,48 @@ class VideoWindow(QMainWindow):
                 else:
                     self.marker_begin = self.current_pos
 
+            if self.marker_begin and self.marker_end:
+                self.save()
+
 
         # Remove all markers
         elif key == Qt.Key_S:
-            self.marker_end = None
-            self.marker_begin = None
+            self.delete_marker()
+
+        elif key == Qt.Key_Q:
+            if self.marker_begin != None and self.marker_end != None:
+                self.saved_markers.append([self.marker_begin, self.marker_end])
+            self.delete_marker()
 
         # Time skipping
         elif key == Qt.Key_Left:
-            self.current_pos -= 2000
+            # Scrub right N miliseconds
+            self.current_pos -= 30
             self.mediaPlayer.setPosition(self.current_pos)
 
         elif key == Qt.Key_Right:
-            self.current_pos += 2000
+            self.current_pos += 30
             self.mediaPlayer.setPosition(self.current_pos)
 
         elif key == Qt.Key_D:
-            self.save()
-            self.labellist.item(self.index).setSelected(False)
-            if self.marker_begin and self.marker_end:
-                self.labellist.item(self.index).setForeground(Qt.green)
-            self.index_next()
-            self.reset()
-            self.load()
-            self.openDefault()
-            self.labellist.item(self.index).setSelected(True)
+            self.nextVid()
 
         elif key == Qt.Key_A:
-            self.save()
-            self.index_prev()
-            self.load()
-            self.openDefault()
+            self.previousVid()
 
         elif key == Qt.Key_R:
             self.toggleFileList()
 
+        elif key == Qt.Key_J:
+            self.convertToMp4()
+
+        elif key == Qt.Key_T:
+            self.showShortcuts()
+
+
 
 if __name__ == '__main__':
+    import time
     app = QApplication(sys.argv)
     player = VideoWindow()
     player.resize(1080, 700)
