@@ -14,6 +14,7 @@ from PyQt5 import QtCore
 import sys
 import os
 import time
+import glob
 from collections import namedtuple
 
 video_container = namedtuple('video_container', ['path', 'marker_begin', 'marker_end', 'saved_markers'], )
@@ -140,12 +141,7 @@ class VideoWindow(QMainWindow):
 
         else:
             #Open the play_extractor folder
-            self.mImgList = self.scanAllDirs("/home/jake/dev/play_extractor")
-            self.video_list = []
-            for imgPath in self.mImgList:
-                self.video_list.append(video_container(imgPath, "None", "None", []))
-                item = QListWidgetItem(imgPath.split("/")[-1].split(".")[0])
-                self.labellist.addItem(item)
+            self.loadVideos("/home/jake/dev/play_extractor")
 
 
 
@@ -190,6 +186,17 @@ class VideoWindow(QMainWindow):
     def settings(self):
         raise NotImplementedError
 
+    def loadVideos(self, path):
+        self.mImgList = self.scanDir(path)
+        self.video_list = []
+        self.labellist.clear()
+        for imgPath in self.mImgList:
+            self.video_list.append(video_container(imgPath, "None", "None", []))
+            item = QListWidgetItem(imgPath.split("/")[-1].split(".")[0])
+            self.labellist.addItem(item)
+        if(len(self.video_list) > 0):
+            self.loadVidIndex(0)
+
     def scanAllDirs(self, folderPath):
         images = []
         extensions = [".mp4"]
@@ -202,6 +209,8 @@ class VideoWindow(QMainWindow):
                     images.append(path)
         return images
 
+    def scanDir(self, folderPath):
+        return glob.glob(folderPath + "/*.mp4")
 
     def time_to_x(self, timepoint):
         return int(timepoint / self.mediaPlayer.duration() * self.videoWidget.width())
@@ -342,9 +351,8 @@ class VideoWindow(QMainWindow):
 
 
     def openDir(self):
-        str(QFileDialog.getExistingDirectory(self, "Select Directory", "."))
-        targetDirPath = "/home/jake/dev/play_extractor"
-        # self.labelList = QListWidget()
+        targetDirPath = (str(QFileDialog.getExistingDirectory(self, "Select Directory", ".")))
+        self.loadVideos(targetDirPath)
 
 
     def exitCall(self):
@@ -493,6 +501,9 @@ class VideoWindow(QMainWindow):
                 stream = ffmpeg.input(video.path, **input_kwargs)
                 stream = ffmpeg.output(stream, 'output/{}.mp4'.format(video.path.split("/")[-1].split(".")[0]))
                 ffmpeg.run(stream)
+        
+    def progress_handler(progress_info):
+        print('{:.2f}'.format(progress_info['percentage']))
 
     def showShortcuts(self):
         MsgBox = QMessageBox()
