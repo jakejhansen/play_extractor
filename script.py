@@ -267,33 +267,33 @@ class VideoWindow(QMainWindow):
                 markerpos = self.time_to_x(self.marker_begin)
                 if self.marker_end:
                     bar_width = self.time_to_x(self.marker_end) - markerpos
-                elif markerpos < self.time_to_x(self.current_pos):
-                    bar_width = self.time_to_x(self.clipArea(self.marker_begin, self.current_pos)) - markerpos
+                elif markerpos < self.time_to_x(self.mediaPlayer.position()):
+                    bar_width = self.time_to_x(self.clipArea(self.marker_begin, self.mediaPlayer.position())) - markerpos
                 else:
                     bar_width = 0
                 painter.setBrush(QBrush(Qt.blue, Qt.SolidPattern))
                 painter.drawRect(markerpos, 0, bar_width, 50)
 
                 if self.marker_end:
-                    if self.current_pos > self.marker_end:
+                    if self.mediaPlayer.position() > self.marker_end:
                         painter.setBrush(QBrush(QColor(171, 255, 158), Qt.SolidPattern))
-                        bar_width = self.time_to_x(self.clipArea(self.marker_begin, self.current_pos) - self.marker_end)
+                        bar_width = self.time_to_x(self.clipArea(self.marker_begin, self.mediaPlayer.position()) - self.marker_end)
                         painter.drawRect(self.time_to_x(self.marker_end), 0, bar_width, 50)
 
-                    elif self.current_pos < self.marker_begin:
+                    elif self.mediaPlayer.position() < self.marker_begin:
                         painter.setBrush(QBrush(QColor(171, 255, 158), Qt.SolidPattern))
-                        bar_width = markerpos - self.time_to_x(self.current_pos)
-                        painter.drawRect(self.time_to_x(self.current_pos), 0, bar_width, 50)
+                        bar_width = markerpos - self.time_to_x(self.mediaPlayer.position())
+                        painter.drawRect(self.time_to_x(self.mediaPlayer.position()), 0, bar_width, 50)
 
-                    elif abs(self.current_pos - self.marker_begin) < abs(self.current_pos - self.marker_end):
+                    elif abs(self.mediaPlayer.position() - self.marker_begin) < abs(self.mediaPlayer.position() - self.marker_end):
                         painter.setBrush(QBrush(QColor(255, 101, 84), Qt.SolidPattern))
-                        bar_width = self.time_to_x(self.current_pos) - self.time_to_x(self.marker_begin)
+                        bar_width = self.time_to_x(self.mediaPlayer.position()) - self.time_to_x(self.marker_begin)
                         painter.drawRect(self.time_to_x(self.marker_begin), 0, bar_width, 50)
 
                     else:
                         painter.setBrush(QBrush(QColor(255, 101, 84), Qt.SolidPattern))
-                        bar_width = self.time_to_x(self.marker_end) - self.time_to_x(self.current_pos)
-                        painter.drawRect(self.time_to_x(self.current_pos), 0, bar_width, 50)
+                        bar_width = self.time_to_x(self.marker_end) - self.time_to_x(self.mediaPlayer.position())
+                        painter.drawRect(self.time_to_x(self.mediaPlayer.position()), 0, bar_width, 50)
 
             for marker in [self.marker_begin, self.marker_end]:
                 if marker != None:
@@ -490,6 +490,7 @@ class VideoWindow(QMainWindow):
 
 
     def convertToMp4(self):
+        #TODO: MAKE THIS PARALLEL
         for video in self.video_list:
             if video.marker_begin != "None" and video.marker_end != "None":
                 input_kwargs = {}
@@ -525,26 +526,29 @@ class VideoWindow(QMainWindow):
         #MsgBox.about(self, "Title", "Message")
 
     def addMarker(self):
-        if not self.overlapsWithSavedClips(self.current_pos):
+        if not self.overlapsWithSavedClips(self.mediaPlayer.position()):
             if self.marker_begin == None:
-                self.marker_begin = self.current_pos
+                self.marker_begin = self.mediaPlayer.position()
             elif self.marker_end == None:
-                if self.current_pos > self.marker_begin:
-                    self.marker_end = self.current_pos
+                if self.mediaPlayer.position() > self.marker_begin:
+                    self.marker_end = self.mediaPlayer.position()
                 else:
-                    self.marker_begin = self.current_pos
-            elif self.current_pos < self.marker_begin:
-                self.marker_begin = self.current_pos
-            elif self.current_pos > self.marker_end:
-                self.marker_end = self.current_pos
+                    self.marker_begin = self.mediaPlayer.position()
+            elif self.mediaPlayer.position() < self.marker_begin:
+                self.marker_begin = self.mediaPlayer.position()
+            elif self.mediaPlayer.position() > self.marker_end:
+                self.marker_end = self.mediaPlayer.position()
             else:
-                if abs(self.current_pos - self.marker_begin) > abs(self.current_pos - self.marker_end):
-                    self.marker_end = self.current_pos
+                if abs(self.mediaPlayer.position() - self.marker_begin) > abs(self.mediaPlayer.position() - self.marker_end):
+                    self.marker_end = self.mediaPlayer.position()
                 else:
-                    self.marker_begin = self.current_pos
+                    self.marker_begin = self.mediaPlayer.position()
 
             if self.marker_begin and self.marker_end:
                 self.save()
+
+        print(self.current_pos)
+        print(self.mediaPlayer.position())
 
 
     def keyPressEvent(self, e):
@@ -554,7 +558,6 @@ class VideoWindow(QMainWindow):
         # play/pause
         if key == Qt.Key_Space:
             self.play()
-            print(self.mediaPlayer.PlayingState)
 
 
         # Play from marker begin
