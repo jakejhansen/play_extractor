@@ -44,6 +44,7 @@ Succesfully used the program to trim 2000 videos. Worked great, has some minor c
 - [ ] Restore previous session (in case the program fails, annotations are saved in a hidden pickle file)
 - [ ] Force overwrite video on conversion
 - [ ] Don't convert a video that has already been converted when user press "convert videos" a second time
+- [ ] Code cleanup + refactoring + comments
 
 ### Nice to have
 
